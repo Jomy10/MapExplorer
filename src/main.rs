@@ -670,6 +670,7 @@ impl ApplicationHandler for MapExplorer {
 
                             if changed {
                                 window.static_user_data = Arc::new(UserDataStatic::new(&window.controls));
+                                window.ud_sender.send((window.controls.center_x, window.controls.center_y, window.static_user_data.clone())).unwrap();
                             }
                         });
                 }
