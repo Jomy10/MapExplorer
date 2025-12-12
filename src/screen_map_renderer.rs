@@ -131,7 +131,7 @@ impl<const BUFFER_SIZE: usize, UserData: 'static + Clone + Send> ScreenMapRender
 
     pub fn start(self) -> (ScreenMapRendererJoinHandle, std::sync::mpsc::SyncSender<UserData>) {
         let (quit_sender, quit_receiver) = std::sync::mpsc::channel::<()>();
-        let (ud_sender, ud_receiver) = std::sync::mpsc::sync_channel::<UserData>(10);
+        let (ud_sender, ud_receiver) = std::sync::mpsc::sync_channel::<UserData>(100);
         return (ScreenMapRendererJoinHandle {
             join: std::thread::spawn(move || {
                 let mut ren = self;
