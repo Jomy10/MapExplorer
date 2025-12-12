@@ -7,9 +7,11 @@ use imgui_winit_support::WinitPlatform;
 use wgpu::util::DeviceExt as _;
 use winit::dpi::LogicalSize;
 use winit::event_loop::ActiveEventLoop;
+use log::*;
 
 use crate::ext::ResultExt as _;
-use crate::{Box2d, Controls, MapRendererMemberExt as _, Point, Projection, ScreenMapRenderer, ScreenMapRendererBuffer, ScreenMapRendererBuffers, ScreenMapRendererJoinHandle};
+use crate::{Box2d, MapRendererMemberExt as _, Point, Projection, ScreenMapRenderer, ScreenMapRendererBuffer, ScreenMapRendererBuffers, ScreenMapRendererJoinHandle};
+use super::controls::Controls;
 
 pub(crate) struct ImGuiState {
     pub(crate) context: imgui::Context,
@@ -446,10 +448,6 @@ impl MapExplorerWindow {
         match self.buffers.try_lock() {
             Ok(mut buffers) => {
                 if let Some(buffer) = buffers.get_buffer() {
-                    self.curr_buffer = Some(buffer);
-                }
-
-                if let Some(buffer) = &self.curr_buffer {
                     self.queue.write_texture(
                         wgpu::TexelCopyTextureInfo {
                             texture: &self.map_texture,
@@ -469,7 +467,10 @@ impl MapExplorerWindow {
                             depth_or_array_layers: 1
                         }
                     );
+                    self.curr_buffer = Some(buffer);
+                }
 
+                if let Some(buffer) = &self.curr_buffer {
                     let ud = buffer.user_data();
                     // TODO: proj_transform
                     let delta = [

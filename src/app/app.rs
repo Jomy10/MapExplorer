@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::{fs, time};
+use std::time;
 
 use winit::application::ApplicationHandler;
 use winit::event::{MouseButton, WindowEvent};
