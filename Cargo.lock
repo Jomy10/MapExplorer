@@ -1372,6 +1372,8 @@ dependencies = [
  "pkg-config",
  "pollster",
  "regex",
+ "serde",
+ "serde_json",
  "shlex",
  "wgpu",
  "winit",

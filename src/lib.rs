@@ -7,5 +7,6 @@ mod controls;
 pub use controls::*;
 
 pub mod ext;
+pub mod app;
 
 pub mod cairo;

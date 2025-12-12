@@ -18,6 +18,8 @@ pollster = "0.4"
 wgpu = "25"
 winit = "0.30"
 regex = { version = "1.12.2", features = ["logging"] }
+serde_json = "1.0.145"
+serde = { version = "1.0.228", features = ["derive"] }
 
 [build-dependencies]
 anyhow = { version = "1.0", features = ["std", "backtrace"] }

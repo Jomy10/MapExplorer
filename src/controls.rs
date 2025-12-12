@@ -1,8 +1,18 @@
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
+use std::path::Path;
+
+use cxx::memory::SharedPtrTarget;
 use cxx::SharedPtr;
+use serde::{Deserialize, Serialize};
 
 use crate::{Box2d, Point, Projection, ProjectionExt};
 
-#[derive(Debug)]
+fn shared_ptr_null<T: SharedPtrTarget>() -> SharedPtr<T> {
+    return SharedPtr::null();
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Controls {
     // would prefer f64 for these
     pub center_x: f32,
@@ -10,12 +20,20 @@ pub struct Controls {
     pub units_per_pixel_scale: f32,
     pub map_width: u32,
     pub map_height: u32,
+    // #[serde(skip)]
     input_projection_srs: String,
+    // #[serde(skip)]
     output_projection_srs: String,
+    #[serde(skip, default = "shared_ptr_null")]
+    // #[serde(deserialize_with = "projection_de", serialize_with = "projection_se")]
     input_projection: SharedPtr<Projection>,
+    #[serde(skip, default = "shared_ptr_null")]
+    // #[serde(deserialize_with = "projection_de", serialize_with = "projection_se")]
     output_projection: SharedPtr<Projection>,
 
+    #[serde(skip)]
     cache_input_projection_srs: String,
+    #[serde(skip)]
     cache_output_projection_srs: String,
 }
 
@@ -74,6 +92,24 @@ impl Controls {
             self.units_per_pixel_scale.into(),
             w, h
         );
+    }
+
+    pub fn write(&self, outfile: impl AsRef<Path>) -> anyhow::Result<()> {
+        let f = File::create(outfile)?;
+        let writer = BufWriter::new(f);
+        serde_json::to_writer(writer, self)?;
+        Ok(())
+    }
+
+    pub fn read(file: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let f = File::open(file)?;
+        let reader = BufReader::new(f);
+        let controls: serde_json::Result<Self> = serde_json::from_reader(reader);
+        let mut controls = controls?;
+        controls.set_input_projection(controls.input_projection_srs.clone())?;
+        controls.set_output_projection(controls.output_projection_srs.clone())?;
+
+        Ok(controls)
     }
 }
 
