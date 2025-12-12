@@ -1,5 +1,4 @@
 use std::fs;
-use std::sync::mpsc::TryRecvError;
 use std::time::{self, Instant};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
@@ -20,6 +19,9 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
+
+// Fix until proper moving is implemented
+const TEMP_OFFSET: f32 = 1.5;
 
 struct ImGuiState {
     context: imgui::Context,
@@ -478,8 +480,8 @@ impl MapExplorerWindow {
                     let ud = buffer.user_data();
                     // TODO: proj_transform
                     let delta = [
-                        ((self.controls.center_x - ud.0) / (self.controls.map_width as f32)) / (self.hidpi_factor as f32),
-                        (-1. * (self.controls.center_y - ud.1) / (self.controls.map_height as f32))  / (self.hidpi_factor as f32)
+                        ((self.controls.center_x - ud.0) / (self.controls.map_width as f32)) / (self.hidpi_factor as f32 * TEMP_OFFSET),
+                        (-1. * (self.controls.center_y - ud.1) / (self.controls.map_height as f32)) / (self.hidpi_factor as f32 * TEMP_OFFSET)
                     ];
                     self.queue.write_buffer(&self.map_delta, 0, bytemuck::cast_slice(&[MapDeltaUniform { delta }]));
                 }
@@ -622,7 +624,8 @@ impl ApplicationHandler for MapExplorer {
                 window.update_buffer().unwrap();
 
                 // UI
-                let mut resize_window = None;
+                #[allow(unused_mut)] // TODO (see next TODO)
+                let mut resize_window: Option<(u32, u32)> = None;
                 let imgui = &mut window.imgui;
                 let now = Instant::now();
                 imgui.context
@@ -645,11 +648,12 @@ impl ApplicationHandler for MapExplorer {
                             ui.input_float("x", &mut window.controls.center_x).build();
                             ui.input_float("y", &mut window.controls.center_y).build();
                             changed |= ui.input_float("units per pixel", &mut window.controls.units_per_pixel_scale).build();
-                            let mut scale = (window.controls.map_width as f32) / (window.window.inner_size().width as f32);
-                            changed |= ui.input_float("render scale", &mut scale).build();
-                            if scale != (window.controls.map_width as f32) / (window.window.inner_size().width as f32) {
-                                resize_window = Some((((window.window.inner_size().width as f32) * scale) as u32, ((window.window.inner_size().height as f32) * scale) as u32));
-                            }
+                            // TODO:
+                            // let mut scale = (window.controls.map_width as f32) / (window.window.inner_size().width as f32);
+                            // changed |= ui.input_float("render scale", &mut scale).build();
+                            // if scale != (window.controls.map_width as f32) / (window.window.inner_size().width as f32) {
+                            //     resize_window = Some((((window.window.inner_size().width as f32) * scale) as u32, ((window.window.inner_size().height as f32) * scale) as u32));
+                            // }
                             match window.controls.updating_input_projection(|srs| {
                                 ui.input_text("input projection", srs).build()
                             }) {
@@ -769,8 +773,8 @@ impl ApplicationHandler for MapExplorer {
 
         match &event {
             &winit::event::DeviceEvent::MouseMotion { delta } if window.mouse_pressed == true => {
-                window.controls.center_x += delta.0 as f32 * window.controls.units_per_pixel_scale;
-                window.controls.center_y += delta.1 as f32 * window.controls.units_per_pixel_scale;
+                window.controls.center_x += (delta.0 as f32) * window.controls.units_per_pixel_scale * TEMP_OFFSET;
+                window.controls.center_y += (delta.1 as f32) * window.controls.units_per_pixel_scale * TEMP_OFFSET;
                 window.ud_sender.send((window.controls.center_x, window.controls.center_y, window.static_user_data.clone())).unwrap();
             },
             _ => {}
@@ -856,7 +860,11 @@ fn main() -> anyhow::Result<()> {
             let str = cxxbuf.to_string_lossy();
             if str.as_ref().starts_with("Mapnik LOG>") {
                 let str = mapnik_log_regex.replace(str.as_ref(), "");
-                info!(target: "Mapnik", "{}", str.as_ref());
+                if str.contains("error") {
+                    error!(target: "Mapnik", "{}", str);
+                } else {
+                    info!(target: "Mapnik", "{}", str);
+                }
             } else {
                 info!(target: "CxxMapExplorer", "{}", str);
             }
