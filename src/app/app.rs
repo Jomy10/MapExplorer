@@ -73,8 +73,13 @@ impl ApplicationHandler for MapExplorer {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => {
                 if self.map_def_watcher.changed().unwrap() {
-                    window.reload_map().unwrap();
+                    match window.reload_map() {
+                        Ok(()) => {},
+                        Err(err) => error!("{}", err),
+                    }
                 }
+
+                let mut should_reload = false;
 
                 let frame = match window.surface.get_current_texture() {
                     Ok(frame) => frame,
@@ -131,6 +136,8 @@ impl ApplicationHandler for MapExplorer {
                                 Ok(c) => changed |= c,
                                 Err(err) => error!("{}", err),
                             }
+
+                            should_reload = ui.button("reload");
 
                             if changed {
                                 window.static_user_data = Arc::new(UserDataStatic::new(&window.controls));
@@ -196,6 +203,13 @@ impl ApplicationHandler for MapExplorer {
                             ResizeMapResult::Size0 | ResizeMapResult::SizeTooBig => warn!("{:?}", err),
                             ResizeMapResult::Error(error) => panic!("{}", error),
                         },
+                    }
+                }
+
+                if should_reload {
+                    match window.reload_map() {
+                        Ok(()) => {},
+                        Err(err) => error!("{}", err),
                     }
                 }
             },
