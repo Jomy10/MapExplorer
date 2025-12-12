@@ -1,15 +1,20 @@
+use std::fs;
+use std::sync::mpsc::TryRecvError;
 use std::time::{self, Instant};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 
-use cxx::SharedPtr;
+use cxx::{let_cxx_string, SharedPtr};
 use imgui::Condition;
 use imgui_winit_support::WinitPlatform;
-use log::{error, warn};
+use log::*;
 use log4rs::append::console::ConsoleAppender;
-use log4rs::config::Appender;
+use log4rs::config::{Appender, Logger};
+use log4rs::encode::pattern::PatternEncoder;
 use map_explorer::ext::ResultExt;
+use map_explorer::ffi::{new_Pipe, new_PipeInputStream, new_PipeOutputStream, ostream};
 use map_explorer::*;
+use regex::Regex;
 use wgpu::util::DeviceExt;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -40,6 +45,7 @@ impl ImGuiState {
             &window,
             imgui_winit_support::HiDpiMode::Default
         );
+
         context.set_ini_filename(ini_filename);
 
         let font_size = (13.0 * hidpi_factor) as f32;
@@ -108,6 +114,7 @@ struct MapExplorerWindow {
 
     controls: Controls,
     map_def_file: PathBuf,
+    basepath: PathBuf,
     map_texture: wgpu::Texture,
     map_view: wgpu::TextureView,
     map_sampler: wgpu::Sampler,
@@ -237,7 +244,12 @@ struct MapDeltaUniform {
 }
 
 impl MapExplorerWindow {
-    async fn new(w: usize, h: usize, event_loop: &ActiveEventLoop, map_def_file: impl AsRef<Path>) -> anyhow::Result<Self> {
+    async fn new(
+        w: usize, h: usize,
+        event_loop: &ActiveEventLoop,
+        map_def_file: impl AsRef<Path>, basepath: impl AsRef<Path>,
+        inifilename: impl AsRef<Path>
+    ) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()
@@ -278,7 +290,7 @@ impl MapExplorerWindow {
         surface.configure(&device, &surface_desc);
 
         let imgui = ImGuiState::new(
-            None, // TODO: ini filename
+            Some(inifilename.as_ref().to_path_buf()),
             window.clone(),
             hidpi_factor,
             surface_desc.format,
@@ -292,7 +304,7 @@ impl MapExplorerWindow {
         let (
             map_renderer,
             buffers
-        ) = create_map_renderer(&controls, map_def_file.as_ref(), "./data/build", static_user_data.clone())?;
+        ) = create_map_renderer(&controls, map_def_file.as_ref(), basepath.as_ref(), static_user_data.clone())?;
         let (join, ud_sender) = map_renderer.start();
 
         let map_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -415,6 +427,7 @@ impl MapExplorerWindow {
 
             controls,
             map_def_file: map_def_file.as_ref().to_path_buf(),
+            basepath: basepath.as_ref().to_path_buf(),
             map_texture,
             map_view,
             map_sampler,
@@ -493,7 +506,7 @@ impl MapExplorerWindow {
         let (
             map_renderer,
             buffers
-        ) = create_map_renderer(&self.controls, &self.map_def_file, "./data/build", self.static_user_data.clone())?;
+        ) = create_map_renderer(&self.controls, &self.map_def_file, &self.basepath, self.static_user_data.clone())?;
         self.buffers = buffers;
         self.curr_buffer = None;
 
@@ -552,14 +565,18 @@ struct MapExplorer {
     w: usize,
     h: usize,
     map_def_file: PathBuf,
+    basepath: PathBuf,
+    inifile: PathBuf,
 }
 
 impl MapExplorer {
-    fn new(w: usize, h: usize, map_def_file: impl Into<PathBuf>) -> anyhow::Result<MapExplorer> {
+    fn new(w: usize, h: usize, map_def_file: impl Into<PathBuf>, basepath: impl Into<PathBuf>, inifile: impl Into<PathBuf>) -> anyhow::Result<MapExplorer> {
         Ok(MapExplorer {
             window: None,
             w, h,
-            map_def_file: map_def_file.into()
+            map_def_file: map_def_file.into(),
+            basepath: basepath.into(),
+            inifile: inifile.into(),
         })
     }
 }
@@ -567,7 +584,7 @@ impl MapExplorer {
 impl ApplicationHandler for MapExplorer {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // TODO: handle unwrap
-        self.window = Some(pollster::block_on(MapExplorerWindow::new(self.w, self.h, event_loop, &self.map_def_file)).unwrap());
+        self.window = Some(pollster::block_on(MapExplorerWindow::new(self.w, self.h, event_loop, &self.map_def_file, &self.basepath, &self.inifile)).unwrap());
     }
 
     fn window_event(
@@ -684,13 +701,18 @@ impl ApplicationHandler for MapExplorer {
                 rpass.draw(0..6, 0..1);
 
                 // ui
-                imgui.renderer
-                    .render(
-                        imgui.context.render(),
-                        &window.queue,
-                        &window.device,
-                        &mut rpass
-                    ).expect("Rendering failed");
+                let draw_data = imgui.context.render();
+                if draw_data.draw_lists_count() == 0 {
+                    error!("ImGui returned empty draw list");
+                } else {
+                    imgui.renderer
+                        .render(
+                            draw_data,
+                            &window.queue,
+                            &window.device,
+                            &mut rpass
+                        ).expect("Rendering failed");
+                }
 
                 drop(rpass);
 
@@ -717,8 +739,10 @@ impl ApplicationHandler for MapExplorer {
             },
             WindowEvent::MouseInput { state, button, .. } if *button == MouseButton::Left => {
                 match state {
-                    winit::event::ElementState::Pressed => window.mouse_pressed = true,
+                    winit::event::ElementState::Pressed if !unsafe { imgui_sys::igIsWindowHovered(imgui_sys::ImGuiHoveredFlags_AnyWindow as i32) }
+                        => window.mouse_pressed = true,
                     winit::event::ElementState::Released => window.mouse_pressed = false,
+                    _ => {}
                 }
             }
             _ => {},
@@ -773,25 +797,85 @@ impl ApplicationHandler for MapExplorer {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Set up logging
+    let stdout_appender = ConsoleAppender::builder()
+        .encoder(Box::new(PatternEncoder::new("{h({l})} {d(%H:%M:%S)} [{t}] {m}\n")))
+        .build();
+    let config = log4rs::Config::builder()
+        .appender(Appender::builder().build("stdout", Box::new(stdout_appender)))
+        .logger(Logger::builder().build("map_explorer", LevelFilter::Trace))
+        .build(log4rs::config::Root::builder()
+            .appender("stdout")
+            .build(LevelFilter::Info)
+        )?;
+    _ = log4rs::init_config(config).unwrap();
+
+    // Parse args
+    let mut args = std::env::args();
+    let progname = args.next().unwrap(); // always present
+    let mapfile = args.next().unwrap_or("map.xml".to_string());
+    let basepath = args.next().unwrap_or(".".to_string());
+
+    if args.next().is_some() {
+        return Err(anyhow::format_err!("Invalid argument.\nUsage: {} [mapnik stylesheet path] [basepath]", progname));
+    }
+
+    let projdirs = directories::ProjectDirs::from("be", "jonaseveraert", "MapExplorer").unwrap();
+    let cache_dir = projdirs.cache_dir();
+    if !cache_dir.exists() {
+        fs::create_dir(cache_dir)?;
+    }
+
+    let inifile = cache_dir.join("MapExplorer.ini");
+    let cachefile = cache_dir.join("cache.json");
+
+    info!("inifile: {}", inifile.display());
+    info!("cachefile: {}", cachefile.display());
+
+    // TODO: logging
+    let mut pipe = new_Pipe()?;
+    let pipeout = new_PipeOutputStream(pipe.clone())?;
+    let pipein = new_PipeInputStream(pipe.clone())?;
+    let pipein = UniqueSendPtr { ptr: pipein };
+
+    let os: *mut ostream = unsafe { std::mem::transmute(pipeout.as_mut_ptr()) };
+    unsafe { map_explorer::set_logging(os); }
+    map_explorer::ffi::clog_redirect();
+
+    _ = std::thread::spawn(move || -> anyhow::Result<()> {
+        let pipein = pipein;
+        let mut pipein = pipein.ptr;
+        let_cxx_string!(cxxbuf = "");
+        let mapnik_log_regex = Regex::new(r"Mapnik LOG> \d+-\d+-\d+ \d+:\d+:\d+: ")?;
+        loop {
+            let input = pipein.pin_mut();
+            _ = map_explorer::ffi::getline(unsafe { std::mem::transmute(input) }, cxxbuf.as_mut())?;
+
+            if cxxbuf.len() == 0 { continue } // TODO: can close?
+
+            let str = cxxbuf.to_string_lossy();
+            if str.as_ref().starts_with("Mapnik LOG>") {
+                let str = mapnik_log_regex.replace(str.as_ref(), "");
+                info!(target: "Mapnik", "{}", str.as_ref());
+            } else {
+                info!(target: "CxxMapExplorer", "{}", str);
+            }
+        }
+        // return Ok(());
+    });
+
     setup_mapnik(&mapnik_config::input_plugins_dir()?, &mapnik_config::fonts_dir()?)?;
 
     let w = 800;
     let h = 600;
 
-    // Set up logging
-    let stdout_appender = ConsoleAppender::builder().build();
-    let config = log4rs::Config::builder()
-        .appender(Appender::builder().build("stdout", Box::new(stdout_appender)));
-    let root = log4rs::config::Root::builder()
-        .appenders(["stdout"]);
-    let root = root.build(log::LevelFilter::Info);
-    let config = config.build(root)?;
-    _ = log4rs::init_config(config)?;
-
     let event_loop = winit::event_loop::EventLoop::new()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-    let mut app = MapExplorer::new(w, h, "data/build/map.xml")?;
+    let mut app = MapExplorer::new(w, h, mapfile, basepath, inifile)?;
     event_loop.run_app(&mut app)?;
+
+    map_explorer::ffi::restore_clog();
+    unsafe { map_explorer::ffi::close_pipe(pipe.pin_mut_unchecked())? };
 
     Ok(())
 }

@@ -1,3 +1,7 @@
+// This shader simply a texture to the screen
+// It requires exactly 6 vertices (draws a rectangle using 2 triangles)
+// The MapDeltaUniform moves the rectangle by the given amounts
+
 struct VertexOutput {
   @builtin(position) clip_position: vec4<f32>,
   @location(0) tex_co: vec2<f32>,

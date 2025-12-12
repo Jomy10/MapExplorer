@@ -1,9 +1,12 @@
 #pragma once
 
 #include <memory>
+#include <ostream>
 #include <string>
 
 #include "MapRenderer.hpp"
+#include <Poco/Pipe.h>
+#include <Poco/PipeStream.h>
 #include <mapnik/projection.hpp>
 
 void setup_mapnik(const std::string& datasources_dir, const std::string& fonts_dir);
@@ -37,3 +40,11 @@ double box2d_get_startx(const box2d_double& b);
 double box2d_get_starty(const box2d_double& b);
 double box2d_get_endx(const box2d_double& b);
 double box2d_get_endy(const box2d_double& b);
+
+// Pipe
+
+std::shared_ptr<Poco::Pipe> new_Pipe();
+std::unique_ptr<Poco::PipeOutputStream> new_PipeOutputStream(std::shared_ptr<Poco::Pipe>);
+std::unique_ptr<Poco::PipeInputStream> new_PipeInputStream(std::shared_ptr<Poco::Pipe>);
+
+void close_pipe(Poco::Pipe& pipe);

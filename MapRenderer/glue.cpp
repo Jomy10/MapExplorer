@@ -1,4 +1,5 @@
 #include "include/glue.hpp"
+#include "include/log.hpp"
 #include "mapnik/projection.hpp"
 #include <memory>
 
@@ -6,12 +7,12 @@ static bool is_mapnik_setup = false;
 
 void setup_mapnik(const std::string& datasources_dir, const std::string& fonts_dir) {
   if (is_mapnik_setup) return;
-  std::cerr << "Setting up mapnik..." << std::endl;
+  INFO << "Setting up mapnik..." << std::endl;
   mapnik::setup();
   mapnik::logger::set_severity(mapnik::logger::severity_type::debug);
   mapnik::logger::use_console(); // TODO: pipe through file
 
-  std::cerr << "Registering resources..." << std::endl;
+  INFO << "Registering resources..." << std::endl;
   mapnik::datasource_cache::instance().register_datasources(datasources_dir);
   mapnik::freetype_engine::register_fonts(fonts_dir);
 
@@ -89,4 +90,22 @@ double box2d_get_endx(const box2d_double& b) {
 
 double box2d_get_endy(const box2d_double& b) {
   return b.maxy();
+}
+
+// Pipe
+
+std::shared_ptr<Poco::Pipe> new_Pipe() {
+  return std::make_shared<Poco::Pipe>();
+}
+
+std::unique_ptr<Poco::PipeOutputStream> new_PipeOutputStream(std::shared_ptr<Poco::Pipe> pipe) {
+  return std::make_unique<Poco::PipeOutputStream>(*pipe);
+}
+
+std::unique_ptr<Poco::PipeInputStream> new_PipeInputStream(std::shared_ptr<Poco::Pipe> pipe) {
+  return std::make_unique<Poco::PipeInputStream>(*pipe);
+}
+
+void close_pipe(Poco::Pipe& pipe) {
+  pipe.close(Poco::Pipe::CloseMode::CLOSE_BOTH);
 }

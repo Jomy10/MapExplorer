@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::pin::Pin;
-use cxx::memory::SharedPtrTarget;
+use cxx::memory::{SharedPtrTarget, UniquePtrTarget};
 use cxx::{let_cxx_string, UniquePtr, SharedPtr};
 
 #[cxx::bridge]
@@ -8,6 +8,10 @@ pub mod ffi {
     unsafe extern "C++" {
         include!("MapRenderer.hpp");
         include!("glue.hpp");
+        include!("Poco/PipeStream.h");
+        include!("Poco/Pipe.h");
+        include!("log.hpp");
+        include!("iostream");
 
         type cairo_t;
 
@@ -56,6 +60,43 @@ pub mod ffi {
         // TODO: definition
 
         fn make_center_box(center: &point_double, projsrc: &Projection, projdst: &Projection, projected_units_per_pixel: f64, screen_w: u32, screen_h: u32) -> SharedPtr<box2d_double>;
+
+        // Logging
+        #[namespace = "Poco"]
+        type Pipe;
+        #[namespace = "Poco"]
+        type PipeOutputStream;
+        #[namespace = "Poco"]
+        type PipeInputStream;
+
+        fn new_Pipe() -> Result<SharedPtr<Pipe>>;
+        fn new_PipeOutputStream(pipe: SharedPtr<Pipe>) -> Result<UniquePtr<PipeOutputStream>>;
+        fn new_PipeInputStream(pipe: SharedPtr<Pipe>) -> Result<UniquePtr<PipeInputStream>>;
+
+        fn close_pipe(pipe: Pin<&mut Pipe>) -> Result<()>;
+
+        #[namespace = "std"]
+        type istream;
+
+        #[namespace = "std"]
+        fn getline<'a>(input: Pin<&'a mut istream>, str: Pin<&mut CxxString>) -> Result<Pin<&'a mut istream>>;
+
+        // type PipeStreamReader;
+
+        // fn getline(self: Pin<&mut PipeStreamReader>) -> Result<*const c_char>;
+
+        // type PipeStream;
+
+        // fn reader(self: Pin<&mut PipeStream>) -> Result<UniquePtr<PipeStreamReader>>;
+        // fn new_pipestream() -> Result<SharedPtr<PipeStream>>;
+
+        #[namespace = "std"]
+        type ostream;
+
+        unsafe fn set_logging(os: *mut ostream);
+
+        fn clog_redirect();
+        fn restore_clog();
     }
 }
 
@@ -213,4 +254,16 @@ impl std::fmt::Debug for Projection {
     }
 }
 
-pub use ffi::{MapRenderer, Projection};
+pub struct UniqueSendPtr<T: UniquePtrTarget> {
+    pub ptr: UniquePtr<T>
+}
+
+unsafe impl<T: UniquePtrTarget> Send for UniqueSendPtr<T> {}
+
+pub struct SharedSendPtr<T: SharedPtrTarget> {
+    pub ptr: SharedPtr<T>
+}
+
+unsafe impl<T: SharedPtrTarget> Send for SharedSendPtr<T> {}
+
+pub use ffi::{MapRenderer, Projection, new_Pipe, new_PipeInputStream, new_PipeOutputStream, Pipe, PipeInputStream, PipeOutputStream, set_logging};

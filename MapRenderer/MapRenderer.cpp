@@ -1,4 +1,5 @@
 #include "include/MapRenderer.hpp"
+#include "include/log.hpp"
 
 #include <iostream>
 #include <string>
@@ -20,7 +21,7 @@
 #pragma clang diagnostic pop
 
 MapRenderer::MapRenderer(uint32_t width, uint32_t height, const std::string map_def, std::shared_ptr<cairo_t> cairo, fs::path base_path) {
-  std::cerr << "Loading map..." << std::endl;
+  INFO << "Loading map..." << std::endl;
   this->width = width;
   this->height = height;
   this->cairo = cairo;
@@ -31,7 +32,7 @@ MapRenderer::MapRenderer(uint32_t width, uint32_t height, const std::string map_
 };
 
 MapRenderer::MapRenderer(uint32_t width, uint32_t height, fs::path map_def_file, std::shared_ptr<cairo_t> cairo, fs::path base_path) {
-  std::cerr << "Loading map..." << std::endl;
+  INFO << "Loading map..." << std::endl;
   this->width = width;
   this->height = height;
   this->cairo = cairo;

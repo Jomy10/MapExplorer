@@ -1,4 +1,4 @@
-mod map_renderer;
+pub mod map_renderer;
 pub use map_renderer::*;
 mod screen_map_renderer;
 pub use screen_map_renderer::*;
