@@ -1,12 +1,17 @@
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time;
 
+use serde::Serialize;
 use winit::application::ApplicationHandler;
+use winit::dpi;
 use winit::event::{MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use log::*;
 
+use crate::app::controls::Controls;
 use crate::file_watcher::FileWatcher;
 
 use super::window::*;
@@ -281,11 +286,26 @@ impl ApplicationHandler for MapExplorer {
 
 impl Drop for MapExplorer {
     fn drop(&mut self) {
-        match self.window.as_ref().unwrap().controls
-            .write(&self.cachefile)
-        {
-            Ok(()) => {},
-            Err(err) => error!("Couldn't write cache to {}: {}", self.cachefile.display(), err),
+        let win = self.window.as_ref().unwrap();
+        let pos = match win.window.outer_position() {
+            Ok(pos) => Some(pos),
+            Err(err) => {
+                error!("Couldn't get window position: {}", err);
+                None
+            },
+        };
+
+        #[derive(Serialize)]
+        struct MapExplorerCache<'a> {
+            controls: &'a Controls,
+            window: Option<dpi::PhysicalPosition<i32>>,
+        }
+
+        let f = File::create(&self.cachefile).unwrap();
+        let w = BufWriter::new(f);
+        let json = serde_json::to_writer(w, &MapExplorerCache { controls: &win.controls, window: pos });
+        if let Err(err) = json {
+            error!("Couldn't write cache to {}: {}", self.cachefile.display(), err);
         }
     }
 }

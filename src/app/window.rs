@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time;
@@ -243,6 +245,16 @@ impl MapExplorerWindow {
         inifilename: impl AsRef<Path>,
         cachefile: impl AsRef<Path>
     ) -> anyhow::Result<Self> {
+        let mut cache: Option<serde_json::Value> = if cachefile.as_ref().exists() {
+            let cachefile = File::open(cachefile.as_ref())?;
+            let cachereader = BufReader::new(cachefile);
+            let json = serde_json::from_reader(cachereader)?;
+            info!("Cache: {}", json);
+            Some(json)
+        } else {
+            None
+        };
+
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()
@@ -256,6 +268,13 @@ impl MapExplorerWindow {
             Arc::new(event_loop.create_window(attributes)?)
         };
         window.set_resizable(false);
+        'wincache: { // restore window position
+            let Some(cache) = &mut cache else { break 'wincache };
+            let obj = cache.as_object_mut().unwrap();
+            let Some(win) = obj.get_mut("window") else { break 'wincache };
+            let windata: winit::dpi::PhysicalPosition<i32> = serde_json::from_value(win.take())?;
+            window.set_outer_position(windata);
+        };
 
         let size = window.inner_size();
         let hidpi_factor = window.scale_factor();
@@ -291,11 +310,13 @@ impl MapExplorerWindow {
             &queue
         )?;
 
-        let controls = if cachefile.as_ref().exists() {
-            Controls::read(cachefile)?
-        } else {
-            Controls::default()
+        let controls = 'ctrlcache: {
+            let Some(cache) = &mut cache else { break 'ctrlcache Controls::default() };
+            let Some(obj) = cache.as_object_mut() else { break 'ctrlcache Controls::default() };
+            let Some(controls) = obj.get_mut("controls") else { break 'ctrlcache Controls::default() };
+            Controls::from_json(controls.take())?
         };
+
         let static_user_data = Arc::new(UserDataStatic::new(&controls));
 
         let (

@@ -1,7 +1,3 @@
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::path::Path;
-
 use cxx::memory::SharedPtrTarget;
 use cxx::SharedPtr;
 use serde::{Deserialize, Serialize};
@@ -94,21 +90,10 @@ impl Controls {
         );
     }
 
-    pub fn write(&self, outfile: impl AsRef<Path>) -> anyhow::Result<()> {
-        let f = File::create(outfile)?;
-        let writer = BufWriter::new(f);
-        serde_json::to_writer(writer, self)?;
-        Ok(())
-    }
-
-    pub fn read(file: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let f = File::open(file)?;
-        let reader = BufReader::new(f);
-        let controls: serde_json::Result<Self> = serde_json::from_reader(reader);
-        let mut controls = controls?;
+    pub fn from_json(json: serde_json::Value) -> anyhow::Result<Self> {
+        let mut controls: Self = serde_json::from_value(json)?;
         controls.set_input_projection(controls.input_projection_srs.clone())?;
         controls.set_output_projection(controls.output_projection_srs.clone())?;
-
         Ok(controls)
     }
 }
