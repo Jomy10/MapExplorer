@@ -4,10 +4,10 @@ use std::time;
 
 use cxx::SharedPtr;
 use imgui_winit_support::WinitPlatform;
+use log::*;
 use wgpu::util::DeviceExt as _;
 use winit::dpi::LogicalSize;
 use winit::event_loop::ActiveEventLoop;
-use log::*;
 
 use crate::ext::ResultExt as _;
 use crate::{Box2d, MapRendererMemberExt as _, Point, Projection, ScreenMapRenderer, ScreenMapRendererBuffer, ScreenMapRendererBuffers, ScreenMapRendererJoinHandle};
@@ -525,6 +525,25 @@ impl MapExplorerWindow {
         self.map_view = map_view;
         self.map_sampler = map_sampler;
         self.map_bind_group = map_bind_group;
+
+        let (join, ud_sender) = map_renderer.start();
+
+        self.map_renderer_join = Some(join);
+        self.ud_sender = ud_sender;
+        self.ud_sender.send((self.controls.center_x, self.controls.center_y, self.static_user_data.clone())).map_err(|err| anyhow::format_err!("{}", err))?;
+
+        Ok(())
+    }
+
+    pub(crate) fn reload_map(&mut self) -> anyhow::Result<()> {
+        info!("Reloading map...");
+
+        let (
+            map_renderer,
+            buffers
+        ) = create_map_renderer(&self.controls, &self.map_def_file, &self.basepath, self.static_user_data.clone())?;
+        self.buffers = buffers;
+        self.curr_buffer = None;
 
         let (join, ud_sender) = map_renderer.start();
 

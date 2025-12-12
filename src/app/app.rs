@@ -7,6 +7,8 @@ use winit::event::{MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use log::*;
 
+use crate::file_watcher::FileWatcher;
+
 use super::window::*;
 
 pub struct MapExplorer {
@@ -14,6 +16,7 @@ pub struct MapExplorer {
     w: usize,
     h: usize,
     map_def_file: PathBuf,
+    map_def_watcher: FileWatcher,
     basepath: PathBuf,
     inifile: PathBuf,
     cachefile: PathBuf,
@@ -26,10 +29,13 @@ impl MapExplorer {
         inifile: impl Into<PathBuf>,
         cachefile: impl Into<PathBuf>
     ) -> anyhow::Result<MapExplorer> {
+        let map_def_file = map_def_file.into();
+        let map_def_watcher = FileWatcher::new(&map_def_file)?;
         Ok(MapExplorer {
             window: None,
             w, h,
-            map_def_file: map_def_file.into(),
+            map_def_file,
+            map_def_watcher,
             basepath: basepath.into(),
             inifile: inifile.into(),
             cachefile: cachefile.into(),
@@ -66,10 +72,14 @@ impl ApplicationHandler for MapExplorer {
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => {
+                if self.map_def_watcher.changed().unwrap() {
+                    window.reload_map().unwrap();
+                }
+
                 let frame = match window.surface.get_current_texture() {
                     Ok(frame) => frame,
                     Err(err) => {
-                        eprintln!("Dropped frame: {err:?}");
+                        warn!("Dropped frame: {err:?}");
                         return;
                     }
                 };
