@@ -58,6 +58,7 @@ pub struct ScreenMapRenderer<const BUFFER_SIZE: usize, UserData: 'static + Clone
     // map_renderer: Arc<Mutex<UniquePtr<MapRenderer>>>,
     _surfaces_closer: Arc<CairoSurfacesCloser<BUFFER_SIZE>>,
     // user_data: Arc<Mutex<UserData>>,
+    rerender_only_when_new_user_data: bool,
 }
 
 unsafe impl<const BUFFER_SIZE: usize, UserData: 'static + Clone + Send> Send for ScreenMapRenderer<BUFFER_SIZE, UserData> {}
@@ -105,6 +106,7 @@ impl<const BUFFER_SIZE: usize, UserData: 'static + Clone + Send> ScreenMapRender
             })),
             on_receive_userdata,
             _surfaces_closer: surfaces_closer,
+            rerender_only_when_new_user_data: true,
         }, buffers));
     }
 
@@ -135,6 +137,7 @@ impl<const BUFFER_SIZE: usize, UserData: 'static + Clone + Send> ScreenMapRender
         return (ScreenMapRendererJoinHandle {
             join: std::thread::spawn(move || {
                 let mut ren = self;
+                let mut ud_received = false;
                 loop {
                     match quit_receiver.try_recv() {
                         Ok(()) => break,
@@ -147,6 +150,7 @@ impl<const BUFFER_SIZE: usize, UserData: 'static + Clone + Send> ScreenMapRender
                     loop {
                         match ud_receiver.try_recv() {
                             Ok(ud) => {
+                                ud_received = true;
                                 let mut guard = ren.map_renderer_and_user_data.lock().map_err(|err| anyhow::format_err!("{}", err))?;
                                 guard.set_user_data(ud.clone());
                                 ren.on_receive_userdata.as_ref()(&mut guard.map_renderer, &ud)
@@ -165,23 +169,28 @@ impl<const BUFFER_SIZE: usize, UserData: 'static + Clone + Send> ScreenMapRender
                         continue;
                     }
 
-                    let surf = &ren.surfaces[ren.idx];
-                    let cr = &ren.contexts[ren.idx];
+                    if (ren.rerender_only_when_new_user_data && ud_received) || !(ren.rerender_only_when_new_user_data) {
+                        let surf = &ren.surfaces[ren.idx];
+                        let cr = &ren.contexts[ren.idx];
 
-                    let mut map_renderer_and_ud = ren.map_renderer_and_user_data.lock().map_err(|err| anyhow::format_err!("{}", err))?;
-                    let map_renderer = &mut map_renderer_and_ud.map_renderer;
-                    map_renderer.pin_mut().set_cairo(cr.clone());
-                    map_renderer.pin_mut().render()?;
+                        let mut map_renderer_and_ud = ren.map_renderer_and_user_data.lock().map_err(|err| anyhow::format_err!("{}", err))?;
+                        let map_renderer = &mut map_renderer_and_ud.map_renderer;
+                        map_renderer.pin_mut().set_cairo(cr.clone());
+                        map_renderer.pin_mut().render()?;
 
-                    let mut buffers = ren.buffers.lock()
-                        .map_err(|err| anyhow::format_err!("{}", err))?;
-                    buffers.add_buffer((
-                        unsafe { cairo_image_surface_get_data(*surf) },
-                        ren.idx,
-                        map_renderer_and_ud.user_data.clone()
-                        // ren.user_data.lock().map_err(|err| anyhow::format_err!("{}", err))?.clone()
-                    ));
-                    ren.used[ren.idx] = true;
+                        let mut buffers = ren.buffers.lock()
+                            .map_err(|err| anyhow::format_err!("{}", err))?;
+                        buffers.add_buffer((
+                            unsafe { cairo_image_surface_get_data(*surf) },
+                            ren.idx,
+                            map_renderer_and_ud.user_data.clone()
+                            // ren.user_data.lock().map_err(|err| anyhow::format_err!("{}", err))?.clone()
+                        ));
+                        ren.used[ren.idx] = true;
+
+                        ren.idx = (ren.idx + 1) % BUFFER_SIZE;
+                        ud_received = false;
+                    }
 
                     std::thread::sleep(Duration::from_millis(10));
                 }
