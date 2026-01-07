@@ -2,7 +2,6 @@
 
 Simple map rendering application to develop Mapnik maps.
 
-![preview](example.gif)
 
 ## Usage
 
