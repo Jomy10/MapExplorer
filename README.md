@@ -2,6 +2,7 @@
 
 Simple map rendering application to develop Mapnik maps.
 
+https://github.com/user-attachments/assets/efdea061-6cb9-46ca-98df-c61b6988702b
 
 ## Usage
 
