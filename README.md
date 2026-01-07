@@ -2,11 +2,15 @@
 
 Simple map rendering application to develop Mapnik maps.
 
+![preview](example.gif)
+
 ## Usage
 
 ```sh
 map-explorer [path/to/map.xml] [base/path]
 ```
+
+When map.xml is changed, the map will be automatically reloaded.
 
 ## Building
 
@@ -22,7 +26,7 @@ cargo build
 |----------|--------|
 | macOS    | :white_check_mark: |
 | Linux    | :white_circle: |
-| Windows  | :white_circle |
+| Windows  | :white_circle: |
 | Web      | :gear: |
 
 - :white_check_mark: = tested and working
